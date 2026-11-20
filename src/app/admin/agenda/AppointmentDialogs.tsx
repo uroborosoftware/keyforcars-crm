@@ -113,7 +113,7 @@ export function NewAppointmentDialog({ initial, settings, defaultCalendar, text,
           <DialogDescription>{new Intl.DateTimeFormat(locale(english), { dateStyle: 'full', timeZone: 'UTC' }).format(new Date(`${form.date}T12:00:00Z`))}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-4" data-testid="new-appointment-form">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 rounded-xl border bg-muted/30 p-4 sm:grid-cols-2">
             <Field label={text.service} htmlFor="ws-service">
               <select id="ws-service" className={selectClass} value={form.service_id} onChange={(e) => set('service_id')(e.target.value)} required>
                 {services.map((s) => <option key={s.id} value={s.id}>{english ? s.name_en : s.name_nl} · {s.duration_minutes} {text.minutes}</option>)}
@@ -136,7 +136,7 @@ export function NewAppointmentDialog({ initial, settings, defaultCalendar, text,
             </div>
           </div>
           <FreeTimes state={free} value={form.time} onPick={set('time')} text={text} />
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 rounded-xl border p-4 sm:grid-cols-3">
             <Field label={text.name} htmlFor="ws-name" className="sm:col-span-1">
               <Input id="ws-name" value={form.customer_name} onChange={(e) => set('customer_name')(e.target.value)} required maxLength={120} autoComplete="off" />
             </Field>

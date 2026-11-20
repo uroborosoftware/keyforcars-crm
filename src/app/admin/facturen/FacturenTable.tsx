@@ -8,6 +8,7 @@ import styles from './facturen-list.module.css';
 import { IS_KEYFORCARS } from '@/config/install';
 import { invoiceDay, invoiceDueDate as dueDate, invoiceToday, PAYMENT_REMINDER_DAYS, PAYMENT_TERM_DAYS } from '@/lib/invoiceDue';
 import { usePreviewLanguage } from '../PreviewLanguage';
+import { Button } from '@/components/ui/button';
 
 const MONEY = new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' });
 const DATE = new Intl.DateTimeFormat('nl-NL', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -168,8 +169,16 @@ export default function FacturenTable({ rows, showTechnician = false }: { rows: 
     return row.status === 'verzonden' && days >= 0 && days <= PAYMENT_REMINDER_DAYS;
   }).length : 0;
   const [selected, setSelected] = useState<InvoiceRow | null>(null);
-  const [filter, setFilter] = useState<Filter>('alle');
+  const [filter, setStatusFilter] = useState<Filter>('alle');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [sort, setSort] = useState<{ by: 'due' | 'amount'; ascending: boolean }>({ by: 'due', ascending: false });
+  const setFilter = (value: Filter) => { setStatusFilter(value); setPage(1); };
+  const changeSort = (by: 'due' | 'amount') => {
+    setSort((current) => ({ by, ascending: current.by === by && !current.ascending }));
+    setPage(1);
+  };
 
   const m = useMemo(() => {
     const now = new Date();
@@ -203,7 +212,29 @@ export default function FacturenTable({ rows, showTechnician = false }: { rows: 
     if (filter === 'laat') return isOverdue(r);
     if (filter === 'betaald') return r.status === 'betaald';
     return true;
-  });
+  }).sort((a, b) => (sort.ascending ? 1 : -1) * (sort.by === 'amount' ? Number(a.total) - Number(b.total) : a.issue_date.localeCompare(b.issue_date)));
+  const pages = Math.max(1, Math.ceil(list.length / pageSize));
+  const currentPage = Math.min(page, pages);
+  const visible = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const locale = english ? 'en-GB' : 'nl-NL';
+  const dueFormatter = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const moneyFormatter = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' });
+
+  function exportCsv() {
+    const field = (value: string) => '"' + (/^[\s]*[=+@\-]/.test(value) ? "'" : '') + value.replaceAll('"', '""') + '"';
+    const columns = english ? ['Invoice', 'Customer', 'Status', 'Due date', 'Amount (EUR)'] : ['Factuur', 'Klant', 'Status', 'Vervaldatum', 'Bedrag (EUR)'];
+    const data = list.map((row) => [
+      row.invoice_number, row.client_name || '', t(row.status === 'betaald' ? 'Betaald' : row.status === 'concept' ? 'Concept' : isOverdue(row) ? 'Te laat' : 'Openstaand'),
+      dueDate(row.issue_date).toISOString().slice(0, 10), String(Number(row.total)),
+    ]);
+    const blob = new Blob(['\uFEFF', [columns, ...data].map((record) => record.map(field).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'keyforcars-invoices.csv';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <>
@@ -242,8 +273,9 @@ export default function FacturenTable({ rows, showTechnician = false }: { rows: 
         </div>
         <label className={styles.search}>
           <Search size={16} aria-hidden="true" />
-          <input type="search" placeholder={t("Factuurnummer, klant of plaats")} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t("Zoek factuur")} />
+          <input type="search" placeholder={t("Factuurnummer, klant of plaats")} value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} aria-label={t("Zoek factuur")} />
         </label>
+        <Button variant="outline" size="sm" type="button" onClick={exportCsv} disabled={!list.length}><Download aria-hidden />{english ? 'Export CSV' : 'CSV exporteren'}</Button>
       </div>
 
       <div className={selected ? `${styles.layout} ${styles.layoutOpen}` : styles.layout}>
@@ -253,12 +285,16 @@ export default function FacturenTable({ rows, showTechnician = false }: { rows: 
             <span role="columnheader"><PreviewText>{"Klant"}</PreviewText></span>
             <span role="columnheader">{t("Auto / klus")}</span>
             {showTechnician && <span role="columnheader" className={styles.colTech}><PreviewText>{"Monteur"}</PreviewText></span>}
-            <span role="columnheader" className={styles.num}><PreviewText>{"Bedrag"}</PreviewText></span>
-            <span role="columnheader" className={styles.colDue}>{t("Vervalt")}</span>
+            <span role="columnheader" aria-sort={sort.by === 'amount' ? sort.ascending ? 'ascending' : 'descending' : 'none'} className={styles.num}>
+              <button type="button" onClick={() => changeSort('amount')}>{t('Bedrag')} {sort.by === 'amount' ? sort.ascending ? '↑' : '↓' : '↕'}</button>
+            </span>
+            <span role="columnheader" aria-sort={sort.by === 'due' ? sort.ascending ? 'ascending' : 'descending' : 'none'} className={styles.colDue}>
+              <button type="button" onClick={() => changeSort('due')}>{t("Vervalt")} {sort.by === 'due' ? sort.ascending ? '↑' : '↓' : '↕'}</button>
+            </span>
             <span role="columnheader">Status</span>
           </div>
           {list.length === 0 && <p className={styles.empty}>{t("Geen facturen gevonden.")}</p>}
-          {list.map((row) => {
+          {visible.map((row) => {
             const car = carOf(row);
             const late = isOverdue(row);
             return (
@@ -287,14 +323,26 @@ export default function FacturenTable({ rows, showTechnician = false }: { rows: 
                   </span>
                 </span>
                 {showTechnician && <span className={`${styles.tech} ${styles.colTech}`}>{row.technician_name ?? '—'}</span>}
-                <span className={`${styles.num} ${styles.amount}`}>{MONEY.format(Number(row.total))}</span>
-                <span className={`${late ? styles.lateText : styles.due} ${styles.colDue}`}>{new Intl.DateTimeFormat(english ? 'en-GB' : 'nl-NL', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(dueDate(row.issue_date))}</span>
+                <span className={`${styles.num} ${styles.amount}`}>{moneyFormatter.format(Number(row.total))}</span>
+                <span className={`${late ? styles.lateText : styles.due} ${styles.colDue}`}>{dueFormatter.format(dueDate(row.issue_date))}</span>
                 <span>
                   <StatusPill row={row} />
                 </span>
               </button>
             );
           })}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+            <span>{list.length} {t('facturen')}</span>
+            <div className="flex items-center gap-2">
+              <select aria-label={english ? 'Invoices per page' : 'Facturen per pagina'} className="rounded-md border bg-card px-2 py-1" value={pageSize}
+                onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+                {[5, 10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>{currentPage} / {pages}</span>
+              <Button variant="outline" size="sm" aria-label={english ? 'Previous page' : 'Vorige pagina'} disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>‹</Button>
+              <Button variant="outline" size="sm" aria-label={english ? 'Next page' : 'Volgende pagina'} disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}>›</Button>
+            </div>
+          </div>
         </div>
 
         {selected && <Drawer key={selected.id} invoice={selected} onClose={() => setSelected(null)} showTechnician={showTechnician} />}

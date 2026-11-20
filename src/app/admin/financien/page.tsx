@@ -8,6 +8,8 @@ import { fetchAll } from '@/lib/kfcOrders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BankFlowChart, ExpenseDonut } from './FinanceCharts';
+import { InvoiceDueWeek } from './InvoiceDueWeek';
+import { SegmentBar } from '../_ui/MetricVisuals';
 import { PreviewShortDate, PreviewText } from '../PreviewLanguage';
 
 export const dynamic = 'force-dynamic';
@@ -75,8 +77,15 @@ export default async function FinanceOverview({ searchParams }: { searchParams: 
   const paid = Array.from(categories.values()).reduce((a, b) => a + b, 0);
   const open = receivables.status === 'fulfilled' ? receivables.value : [];
   const overdue = open.filter((item) => item.due_date && item.due_date < today);
-  const upcoming = open.filter((item) => item.due_date && item.due_date >= today)
-    .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')).slice(0, 5);
+  const dueWeek = Array.from({ length: 7 }, (_, index) => dateKey(new Date(day.getTime() + index * 86_400_000)));
+  const dueDays = new Set(dueWeek);
+  const upcoming = open.flatMap((item) => {
+    if (!item.due_date || !dueDays.has(item.due_date)) return [];
+    const invoice = Array.isArray(item.sales_invoices) ? item.sales_invoices[0] : item.sales_invoices;
+    return [{ id: item.entry_id, date: item.due_date, label: invoice?.invoice_number ?? '#' + item.entry_id,
+      amount: Number(item.open_cents), href: item.sales_invoice_id ? '/admin/facturen/' + item.sales_invoice_id : '/admin/facturen' }];
+  });
+  const expenseBreakdown = [...categories].sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ label: EXPENSE_CATEGORIES[category] ?? category, amount }));
   const totalOpen = (rows: Receivable[]) => rows.reduce((sum, row) => sum + Number(row.open_cents), 0);
   const recentRows = recent.status === 'fulfilled' && !recent.value.error ? recent.value.data : null;
   const stats = [
@@ -107,7 +116,7 @@ export default async function FinanceOverview({ searchParams }: { searchParams: 
           <CardTitle><PreviewText>Inkomend en uitgaand</PreviewText></CardTitle>
           <div className="flex gap-1">{([['week','7 dagen'],['month','6 maanden']] as const).map(([id, label]) =>
             <Button key={id} size="sm" variant={(id === 'week') === weekly ? 'secondary' : 'ghost'} asChild>
-              <Link aria-current={(id === 'week') === weekly ? 'page' : undefined} href={'?period=' + id + (sample ? '' : '&chart=bank')}><PreviewText>{label}</PreviewText></Link>
+              <Link prefetch={false} aria-current={(id === 'week') === weekly ? 'page' : undefined} href={'?period=' + id + (sample ? '' : '&chart=bank')}><PreviewText>{label}</PreviewText></Link>
             </Button>)}</div>
         </div><CardDescription className="flex flex-wrap items-center justify-between gap-2">
           <PreviewText>{sample ? 'Voorbeeldgrafiek met gesimuleerde transacties' : 'Geïmporteerde bankbewegingen, inclusief overschrijvingen'}</PreviewText>
@@ -124,8 +133,8 @@ export default async function FinanceOverview({ searchParams }: { searchParams: 
           <CardDescription><PreviewText>Op uitgavedatum deze maand</PreviewText></CardDescription></CardHeader>
         <CardContent className="grid gap-3 text-sm">
           {expenses.status === 'rejected' ? <PreviewText>Gegevens niet beschikbaar</PreviewText> : !categories.size ? <PreviewText>Geen betaalde uitgaven in deze periode</PreviewText> :
-            <ExpenseDonut total={paid} categories={[...categories].sort((a, b) => b[1] - a[1]).map(([category, amount]) =>
-              ({ label: EXPENSE_CATEGORIES[category] ?? category, amount }))} />}
+            <><SegmentBar values={expenseBreakdown.map(({ label, amount }) => ({ label, value: amount }))} label="Expenses by category / Uitgaven per categorie" />
+              <ExpenseDonut total={paid} categories={expenseBreakdown} /></>}
         </CardContent>
       </Card>
       <Card>
@@ -140,13 +149,7 @@ export default async function FinanceOverview({ searchParams }: { searchParams: 
       <Card>
         <CardHeader><CardTitle><PreviewText>Aankomende vervaldata</PreviewText></CardTitle></CardHeader>
         <CardContent className="grid gap-2 text-sm">
-          {receivables.status === 'rejected' ? <PreviewText>Gegevens niet beschikbaar</PreviewText> : !upcoming.length ? <PreviewText>Geen aankomende vervaldata</PreviewText> : upcoming.map((item) => {
-            const invoice = Array.isArray(item.sales_invoices) ? item.sales_invoices[0] : item.sales_invoices;
-            return <Link key={item.entry_id} href={item.sales_invoice_id ? '/admin/facturen/' + item.sales_invoice_id : '/admin/facturen'} className="flex justify-between gap-2 rounded border p-2 hover:bg-muted">
-              <span>{invoice?.invoice_number ?? '#' + item.entry_id} · <PreviewShortDate iso={item.due_date ?? ''} /></span>
-              <span className="tabular-nums">{money(Number(item.open_cents))}</span>
-            </Link>;
-          })}
+          {receivables.status === 'rejected' ? <PreviewText>Gegevens niet beschikbaar</PreviewText> : <InvoiceDueWeek days={dueWeek} invoices={upcoming} />}
         </CardContent>
       </Card>
     </div>

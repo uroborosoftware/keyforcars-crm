@@ -74,7 +74,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
    * keep the initials; that is the fallback, not a failure.
    */
   let photoUrl: string | null = null;
-  if (user && !CRM_PREVIEW) {
+  if (user && !CRM_PREVIEW && (!IS_KEYFORCARS || user.role === 'monteur')) {
     try {
       const supabase = await createSupabaseServerClient();
       const { data } = await supabase

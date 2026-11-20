@@ -287,7 +287,18 @@ body.kfc-shell {
 .kfc-dashboard-title { font-size: clamp(1.6rem, 2.6vw, 2.25rem); line-height: 1.15; }
 .kfc-kpi-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .kfc-shell .kfc-kpi { gap: .6rem; min-width: 0; }
-.kfc-shell .kfc-kpi-primary { border-color: #ecd0c3; background: #fff7f3; }
+.kfc-shell .kfc-kpi-primary { border-color: #b9c7ee; background: color-mix(in srgb, var(--card) 95%, #365bc7); }
+.kfc-shell .kfc-toolbar { background: var(--card); }
+.kfc-shell [data-sidebar="group-label"] { font-family: var(--font-geist-mono), monospace; font-size: .65rem; text-transform: uppercase; letter-spacing: .07em; }
+.kfc-shell .kfc-metric-arc {
+  position: relative; isolation: isolate; display: grid; align-content: end; justify-items: center;
+  gap: .25rem; width: min(100%, 13rem); aspect-ratio: 2 / 1; margin-inline: auto; padding-bottom: .2rem; overflow: hidden;
+}
+.kfc-shell .kfc-metric-arc::before {
+  content: ''; position: absolute; z-index: -1; inset: 0 0 auto; width: 100%; aspect-ratio: 1;
+  border-radius: 50%; background: conic-gradient(from 270deg, #177e73 var(--metric-arc), var(--muted) 0 180deg, transparent 0);
+  mask: radial-gradient(transparent 61%, black 62%);
+}
 .kfc-dashboard-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .kfc-shell :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 @media (min-width: 850px) {

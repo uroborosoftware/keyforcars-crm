@@ -1,6 +1,6 @@
 'use client';
 
-import { CartesianGrid, Line, LineChart, Pie, PieChart, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Pie, PieChart, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { usePreviewLanguage } from '../PreviewLanguage';
 
@@ -27,7 +27,7 @@ export function BankFlowChart({ rows, weekly }: {
       <span><span aria-hidden className="mr-1 inline-block w-4 border-t-2 border-chart-1 align-middle" />{config.outgoing.label}</span>
     </div>
     <ChartContainer config={config} className="h-[220px] w-full">
-      <LineChart accessibilityLayer data={rows} margin={{ top: 10, right: 12, bottom: 4, left: 12 }}>
+      <AreaChart accessibilityLayer data={rows} margin={{ top: 10, right: 12, bottom: 4, left: 12 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="date" ticks={rows.filter((row) => row.tick !== false).map((row) => row.date)} axisLine={false} tickLine={false} tickMargin={10} tickFormatter={(key) => date.format(new Date(key))} />
         <YAxis hide domain={[0, 'auto']} />
@@ -38,9 +38,9 @@ export function BankFlowChart({ rows, weekly }: {
             formatter={(value, name) => <><span>{config[name as keyof typeof config]?.label}</span><strong className="ml-auto tabular-nums">{currency.format(Number(value) / 100)}</strong></>}
           />}
         />
-        <Line dataKey="incoming" type="linear" dot={rows.length === 1 ? { r: 4 } : false} stroke="var(--color-incoming)" strokeDasharray="5 5" strokeWidth={2} isAnimationActive={false} />
-        <Line dataKey="outgoing" type="linear" dot={rows.length === 1 ? { r: 4 } : false} stroke="var(--color-outgoing)" strokeLinecap="round" strokeWidth={3} isAnimationActive={false} />
-      </LineChart>
+        <Area dataKey="incoming" type="stepAfter" dot={rows.length === 1 ? { r: 4 } : false} stroke="var(--color-incoming)" fill="var(--color-incoming)" fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
+        <Area dataKey="outgoing" type="stepAfter" dot={rows.length === 1 ? { r: 4 } : false} stroke="var(--color-outgoing)" fill="var(--color-outgoing)" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
+      </AreaChart>
     </ChartContainer>
   </>;
 }

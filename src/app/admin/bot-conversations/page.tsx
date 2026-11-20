@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowDownToLine, AudioLines, CheckCircle2, PackageSearch, PhoneForwarded } from 'lucide-react';
+import { ArrowDownToLine, AudioLines, CheckCircle2, Clock3, PackageSearch, PhoneForwarded } from 'lucide-react';
 import { DEMO_BOT_AGENT } from '@/lib/kfcDemoBotRules';
 import { requireOfficeUser } from '@/lib/crmSession';
 import { reviewAgentIds, type ReviewMetadata } from '../../../../supabase/functions/_shared/kfcCallReview';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ReviewText, ReviewDate } from './ReviewText';
 import { DeleteConversation } from './DeleteConversation';
 import { syncBotConversations } from './actions';
+import { ActivityLine, PulseBars } from '../_ui/MetricVisuals';
 
 export const dynamic = 'force-dynamic';
 const path = '/admin/bot-conversations';
@@ -55,6 +56,18 @@ export default async function BotConversationsPage({ searchParams }: { searchPar
   const transcript = (detail?.transcript ?? []) as NonNullable<Row['transcript']>;
   const info = picked?.metadata.kfc_call_review;
   const names = new Map(rows.map((row) => [row.metadata.kfc_call_review.agent_id, row.metadata.kfc_call_review.agent_name]));
+  const hour = 3_600_000;
+  const hourStart = Math.floor(Date.now() / hour) * hour;
+  const durations = Array<number>(24).fill(0);
+  const counts = Array<number>(24).fill(0);
+  for (const row of rows) {
+    const index = 23 + Math.floor((Date.parse(row.created_at) - hourStart) / hour);
+    if (index >= 0 && index < counts.length) {
+      counts[index]++;
+      durations[index] += row.duration_secs ?? 0;
+    }
+  }
+  const chart = counts.map((value, index) => ({ label: new Date(hourStart - (23 - index) * hour).toISOString().slice(0, 16) + 'Z', value }));
   const stats = [
     { icon: AudioLines, label: ['Recent conversations', 'Recente gesprekken'], value: rows.length },
     { icon: CheckCircle2, label: ['Successful', 'Geslaagd'], value: rows.filter((row) => row.outcome === 'success').length },
@@ -83,6 +96,19 @@ export default async function BotConversationsPage({ searchParams }: { searchPar
           <CardTitle className="text-2xl tabular-nums">{value}</CardTitle>
         </CardHeader></Card>)}
       </div>
+      {rows.length > 0 && <div className="grid gap-3 md:grid-cols-3">
+        <Card><CardHeader><CardDescription><ReviewText en="Recent records by hour · 24h" nl="Recente records per uur · 24 uur" /></CardDescription>
+          <CardTitle className="text-2xl tabular-nums">{counts.reduce((sum, count) => sum + count, 0)}</CardTitle></CardHeader>
+          <CardContent><PulseBars dense values={chart} label="Recorded conversations by hour / Opgeslagen gesprekken per uur" /></CardContent>
+        </Card>
+        <Card><CardHeader><CardDescription><ReviewText en="Recorded duration · 24h" nl="Opgeslagen gespreksduur · 24 uur" /></CardDescription>
+          <CardTitle className="text-2xl tabular-nums">{duration(durations.reduce((sum, seconds) => sum + seconds, 0))}</CardTitle></CardHeader>
+          <CardContent><ActivityLine values={durations} label="Recorded duration by hour / Opgeslagen gespreksduur per uur" /></CardContent>
+        </Card>
+        <Card><CardHeader><CardDescription className="flex items-center gap-2"><Clock3 className="size-4" aria-hidden /><ReviewText en="Latest saved conversation" nl="Laatst opgeslagen gesprek" /></CardDescription>
+          <CardTitle className="text-lg tabular-nums"><ReviewDate value={rows[0].created_at} /></CardTitle></CardHeader>
+        </Card>
+      </div>}
       {allowed.length > 1 && <div className="flex flex-wrap gap-2">
         <Button asChild size="sm" variant={!agent ? 'default' : 'outline'}><Link href={path}><ReviewText en="All agents" nl="Alle agenten" /></Link></Button>
         {allowed.map((id) => <Button asChild key={id} size="sm" variant={agent === id ? 'default' : 'outline'}><Link href={path + '?' + new URLSearchParams({ agent: id, ...(channel ? { channel } : {}) })}>{names.get(id) ?? id}</Link></Button>)}
@@ -92,7 +118,7 @@ export default async function BotConversationsPage({ searchParams }: { searchPar
         <Card className="min-w-0">
           <CardHeader><CardTitle><ReviewText en="Call history" nl="Gespreksgeschiedenis" /></CardTitle></CardHeader>
           <CardContent className="grid max-h-[38rem] gap-2 overflow-auto">
-            {rows.map((row) => <Link key={row.conversation_id} href={path + '?' + new URLSearchParams({ call: row.conversation_id, ...(agent ? { agent } : {}), ...(channel ? { channel } : {}) })} aria-current={picked?.conversation_id === row.conversation_id ? 'page' : undefined} className="group grid min-w-0 gap-1 rounded-md border p-3 hover:bg-muted aria-[current=page]:border-primary aria-[current=page]:bg-primary/5">
+            {rows.map((row) => <Link prefetch={false} key={row.conversation_id} href={path + '?' + new URLSearchParams({ call: row.conversation_id, ...(agent ? { agent } : {}), ...(channel ? { channel } : {}) })} aria-current={picked?.conversation_id === row.conversation_id ? 'page' : undefined} className="group grid min-w-0 gap-1 rounded-md border p-3 hover:bg-muted aria-[current=page]:border-primary aria-[current=page]:bg-primary/5">
               <span className="flex flex-wrap justify-between gap-1 text-sm font-medium"><ReviewDate value={row.created_at} /><span>{duration(row.duration_secs)}</span></span>
               <span className="text-muted-foreground truncate text-xs">{row.metadata.kfc_call_review.agent_name}</span>
               <span className="flex flex-wrap items-center gap-2"><Badge variant="outline"><ReviewText en={outcome(row.outcome)[0]} nl={outcome(row.outcome)[1]} /></Badge>{row.phone && <span className="text-xs">{row.phone}</span>}</span>

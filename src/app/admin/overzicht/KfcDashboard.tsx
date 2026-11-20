@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, CircleEuro, Clock3, Package, ShoppingCart, TrendingUp, Wallet, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { PreviewProductName, PreviewDate, PreviewText } from '../PreviewLanguage';
-import { RevenueBars, ShopDonut } from './KfcCharts';
+import { RevenueBars } from './KfcCharts';
+import { MetricArc, PulseBars, SegmentBar, metricColors } from '../_ui/MetricVisuals';
 import { SHOPS, SOLD, sampleCatalogue, sampleOrders, type SampleOrder } from '@/lib/kfcSampleOrders';
 import { ordersForDashboard, sampleShopOrdersExist, shopOrdersExist } from '@/lib/kfcOrders';
 import { rankProducts } from './productRanking';
@@ -59,20 +60,20 @@ function Trend({ now, before }: { now: number; before: number }) {
   const change = Math.round(((now - before) / before) * 100);
   const up = change >= 0;
   return (
-    <span className={`inline-flex items-center gap-1 text-xs font-medium ${up ? 'text-emerald-600' : 'text-red-600'}`}>
+    <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${up ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
       {up ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
       {Math.abs(change)}% <span className="text-muted-foreground font-normal"><PreviewText>vs vorige periode</PreviewText></span>
     </span>
   );
 }
 
-function Kpi({ label, value, now, before, foot, strong }: {
-  label: string; value: string; now?: number; before?: number; foot: string; strong?: boolean;
+function Kpi({ label, value, now, before, foot, strong, icon: Icon }: {
+  label: string; value: string; now?: number; before?: number; foot: string; strong?: boolean; icon: LucideIcon;
 }) {
   return (
     <Card className={strong ? 'kfc-kpi kfc-kpi-primary' : 'kfc-kpi'}>
       <CardHeader className="pb-2">
-        <CardDescription><PreviewText>{label}</PreviewText></CardDescription>
+        <CardDescription className="flex items-center justify-between gap-2"><PreviewText>{label}</PreviewText><Icon className="size-4 shrink-0" aria-hidden /></CardDescription>
         <CardTitle className="text-2xl font-semibold tabular-nums">{value}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-1">
@@ -140,7 +141,7 @@ async function readKfcDashboard(period: KfcPeriod) {
 
   const byShop = SHOPS.map((shop) => ({
     label: shop,
-    value: inPeriod.filter((o) => o.shop === shop).reduce((s, o) => s + o.totalExcl, 0) / 100,
+    value: inPeriod.filter((o) => o.shop === shop).reduce((s, o) => s + o.totalExcl, 0),
   }));
 
   const best = rankProducts(inPeriod)
@@ -153,7 +154,18 @@ async function readKfcDashboard(period: KfcPeriod) {
   const catalogue = sampleCatalogue();
   const unsold = catalogue.filter((product) => !soldRecently.has(product.sku));
 
-  return { now, days, cur, prev, onHold, bars, byShop, best, unsold, catalogue, showSampleNotice };
+  const countries = new Map<string, number>();
+  const activity = new Map<string, number>();
+  for (const { date, order } of sold) {
+    activity.set(date, (activity.get(date) ?? 0) + 1);
+    if (date >= from && order.country) countries.set(order.country, (countries.get(order.country) ?? 0) + 1);
+  }
+  const pulse = Array.from({ length: 30 }, (_, index) => {
+    const label = dayKey(now - (29 - index) * DAY);
+    return { label, value: activity.get(label) ?? 0 };
+  });
+  const completed = inPeriod.filter((order) => order.status === 'completed').length;
+  return { now, days, cur, prev, onHold, bars, byShop, best, unsold, catalogue, showSampleNotice, pulse, completed, countries: [...countries].sort((a, b) => b[1] - a[1]).slice(0, 6) };
 }
 
 /**
@@ -161,7 +173,7 @@ async function readKfcDashboard(period: KfcPeriod) {
  * revenue per shop, best sellers, and what has not sold in 90 days.
  */
 export default async function KfcDashboard({ period }: { period: KfcPeriod; embedded?: boolean }) {
-  const { now, days, cur, prev, onHold, bars, byShop, best, unsold, catalogue, showSampleNotice } = await readKfcDashboard(period);
+  const { now, days, cur, prev, onHold, bars, byShop, best, unsold, catalogue, showSampleNotice, pulse, completed, countries } = await readKfcDashboard(period);
   const topUnits = best[0]?.value ?? 1;
 
   return (
@@ -174,7 +186,7 @@ export default async function KfcDashboard({ period }: { period: KfcPeriod; embe
         <div className="flex gap-1 rounded-lg border p-1">
           {PERIODS.map((p) => (
             <Button key={p.id} asChild size="sm" variant={p.id === period ? 'default' : 'ghost'}>
-              <Link href={`/admin/overzicht?webshop=${p.id}`}><PreviewText>{p.label}</PreviewText></Link>
+              <Link prefetch={false} href={`/admin/overzicht?webshop=${p.id}`}><PreviewText>{p.label}</PreviewText></Link>
             </Button>
           ))}
         </div>
@@ -185,13 +197,13 @@ export default async function KfcDashboard({ period }: { period: KfcPeriod; embe
       </p>}
 
       <div className="kfc-kpi-strip">
-        <Kpi label="Bestellingen" value={number(cur.orders)} now={cur.orders} before={prev.orders} foot="betaald of verzonden" />
-        <Kpi strong label="Omzet excl. btw" value={euro(cur.revenue)} now={cur.revenue} before={prev.revenue} foot="producten en verzending, zonder 21% btw" />
-        <Kpi label="Stuks verkocht" value={number(cur.units)} now={cur.units} before={prev.units} foot="alle drie de webshops" />
-        <Kpi label="Gemiddelde bestelling" value={euro(cur.orders ? cur.revenue / cur.orders : 0)}
+        <Kpi icon={ShoppingCart} label="Bestellingen" value={number(cur.orders)} now={cur.orders} before={prev.orders} foot="betaald of verzonden" />
+        <Kpi icon={CircleEuro} strong label="Omzet excl. btw" value={euro(cur.revenue)} now={cur.revenue} before={prev.revenue} foot="producten en verzending, zonder 21% btw" />
+        <Kpi icon={Package} label="Stuks verkocht" value={number(cur.units)} now={cur.units} before={prev.units} foot="alle drie de webshops" />
+        <Kpi icon={TrendingUp} label="Gemiddelde bestelling" value={euro(cur.orders ? cur.revenue / cur.orders : 0)}
           now={cur.orders ? cur.revenue / cur.orders : 0} before={prev.orders ? prev.revenue / prev.orders : 0} foot="omzet excl. btw per bestelling" />
-        <Kpi label="Wacht op betaling" value={number(onHold)} foot="bankoverschrijvingen nog niet binnen" />
-        <Kpi label="Marge" value="—" foot="zodra de inkoopprijzen bekend zijn" />
+        <Kpi icon={Clock3} label="Wacht op betaling" value={number(onHold)} foot="bankoverschrijvingen nog niet binnen" />
+        <Kpi icon={Wallet} label="Webshop afgerond" value={number(completed)} foot="in de gekozen periode" />
       </div>
 
       <div className="kfc-dashboard-charts">
@@ -208,7 +220,33 @@ export default async function KfcDashboard({ period }: { period: KfcPeriod; embe
 
         <Card className="min-w-0">
           <CardHeader><CardTitle><PreviewText>Omzet per webshop</PreviewText></CardTitle></CardHeader>
-          <CardContent><ShopDonut slices={byShop} /></CardContent>
+          <CardContent className="grid gap-4">
+            <ul className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+              {byShop.map((shop, index) => <li key={shop.label} className="min-w-0">
+                <span className="flex items-center gap-1.5 break-all text-xs text-muted-foreground"><span className="size-2 shrink-0 rounded-full" style={{ background: metricColors[index] }} />{shop.label}</span>
+                <strong className="text-lg tabular-nums">{euro(shop.value)}</strong>
+                <span className="ml-1 text-xs text-muted-foreground">{cur.revenue > 0 ? Math.round(shop.value / cur.revenue * 100) : 0}%</span>
+              </li>)}
+            </ul>
+            <SegmentBar values={byShop} label="Revenue per webshop / Omzet per webshop" />
+          </CardContent>
+        </Card>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+        <Card>
+          <CardHeader><CardTitle><PreviewText>Bestelactiviteit</PreviewText></CardTitle><CardDescription><PreviewText>Afgelopen 30 dagen</PreviewText></CardDescription></CardHeader>
+          <CardContent className="grid gap-4">
+            <PulseBars values={pulse} label="Daily order counts / Dagelijkse bestellingen" />
+            <p className="text-xs text-muted-foreground"><PreviewText>Bestellingen per land in de gekozen periode</PreviewText></p>
+            <dl className="grid gap-x-5 sm:grid-cols-2">{countries.map(([country, count]) => <div key={country} className="flex items-center justify-between border-t py-2 text-sm"><dt>{country}</dt><dd className="tabular-nums">{number(count)}</dd></div>)}</dl>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle><PreviewText>Webshop afgerond</PreviewText></CardTitle><CardDescription>{number(completed)} / {number(cur.orders)} <PreviewText>bestellingen</PreviewText></CardDescription></CardHeader>
+          <CardContent className="grid gap-4">
+            <MetricArc value={cur.orders ? Math.round(completed / cur.orders * 100) : 0} label="" />
+            <Link prefetch={false} className="text-sm font-medium text-primary" href="/admin/orders?status=completed"><PreviewText>Bekijk afgeronde bestellingen</PreviewText> →</Link>
+          </CardContent>
         </Card>
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
@@ -243,7 +281,7 @@ export default async function KfcDashboard({ period }: { period: KfcPeriod; embe
               <TableBody>
                 {unsold.slice(0, 12).map((product) => (
                   <TableRow key={product.sku}>
-                    <TableCell><Link className="font-medium underline-offset-4 hover:underline" href={`/admin/voorraad/p/${encodeURIComponent(product.sku)}`}>{product.sku}</Link></TableCell>
+                    <TableCell><Link prefetch={false} className="font-medium underline-offset-4 hover:underline" href={`/admin/voorraad/p/${encodeURIComponent(product.sku)}`}>{product.sku}</Link></TableCell>
                     <TableCell><PreviewProductName sku={product.sku}>{product.name}</PreviewProductName></TableCell>
                     <TableCell className="text-right tabular-nums">{euro(product.price)}</TableCell>
                   </TableRow>

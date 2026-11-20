@@ -94,7 +94,7 @@ const GROUPS: Group[] = [
 const TITLES: Record<string, string> = {
   overzicht: 'Dashboard', orders: 'Bestellingen', klanten: 'Klanten', voorraad: 'Voorraad', inkoop: 'Inkoop', leads: 'Leads',
   'bot-conversations': 'ElevenLabs-gesprekken', gesprekken: 'Gesprekken', financien: 'Financieel overzicht', facturen: 'Facturen', uitgaven: 'Uitgaven', bank: 'Bank', 'best-verkocht': 'Best verkocht', winst: 'Winst & verbruik',
-  rapport: 'Prestaties', attributie: 'Advertentieklikken', instellingen: 'Instellingen', budget: 'AI-budget', 'agent-centrum': 'Agentcentrum', p: 'Productzoeker', nieuw: 'Nieuw', lijst: 'Alle leads', jobs: 'Planning',
+  rapport: 'Prestaties', attributie: 'Advertentieklikken', instellingen: 'Instellingen', 'agent-centrum': 'Agentcentrum', p: 'Productzoeker', nieuw: 'Nieuw', lijst: 'Alle leads', jobs: 'Planning',
   verzending: 'Verzending', agenda: 'Werkplaatsagenda', verzendinstellingen: 'Verzendinstellingen', bestellingen: 'Bestellingen', picken: 'Picklijst',
 };
 
@@ -152,9 +152,6 @@ export default function KfcShell({ children, role, email, initials, photoUrl, fo
   };
   const visible = GROUPS.flatMap((group) => {
     const items = group.items.filter((item) => office || !item.office);
-    if (group.label === 'Kantoor' && role === 'owner') {
-      items.push({ label: 'AI-budget', href: '/admin/instellingen/budget', icon: Euro });
-    }
     const current = { ...group, items };
     return group.label === 'Magazijn' ? [current, shipping] : [current];
   }).filter((group) => group.items.length);
@@ -189,6 +186,11 @@ export default function KfcShell({ children, role, email, initials, photoUrl, fo
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
+        <div className="px-2 pb-2 group-data-[collapsible=icon]:hidden">
+          <Button variant="outline" className="h-8 w-full justify-start gap-2 text-muted-foreground" onClick={() => setSearchOpen(true)}>
+            <Search aria-hidden />{english ? 'Find a page' : 'Pagina zoeken'}<kbd className="ml-auto rounded border px-1 text-[10px]">Ctrl K</kbd>
+          </Button>
+        </div>
         <SidebarContent>
           {visible.map((group) => (
             <SidebarGroup key={group.label}>

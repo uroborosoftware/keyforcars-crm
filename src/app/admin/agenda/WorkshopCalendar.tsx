@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useCalendarController } from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/react/daygrid';
 import interactionPlugin from '@fullcalendar/react/interaction';
-import listPlugin from '@fullcalendar/react/list';
-import multiMonthPlugin from '@fullcalendar/react/multimonth';
 import timeGridPlugin from '@fullcalendar/react/timegrid';
 import nlLocale from '@fullcalendar/react/locales/nl';
 import enGbLocale from '@fullcalendar/react/locales/en-gb';
@@ -14,13 +13,12 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Settings, XI
 import { EventCalendarViews } from '@/components/calendar/event-calendar-views';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePreviewLanguage } from '../PreviewLanguage';
 import { amsterdamParts, amsterdamToday, minutesToTime, timeToMinutes, isoWeekday } from '@/lib/amsterdamTime';
 import type { WorkshopAppointment, WorkshopSettings } from '@/lib/workshopAgenda';
 import { apiError, calendarText } from './calendarText';
-import { AppointmentDetailDialog, NewAppointmentDialog } from './AppointmentDialogs';
-import { WorkshopSettingsSheet } from './WorkshopSettingsSheet';
 
 /*
  * The Studio Admin Aria calendar (src/app/(main)/dashboard/calendar), ported
@@ -30,11 +28,14 @@ import { WorkshopSettingsSheet } from './WorkshopSettingsSheet';
  * demo events. Monday-first, 24-hour, Europe/Amsterdam.
  */
 
-const plugins = [dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin, multiMonthPlugin];
+const plugins = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const AppointmentDetailDialog = dynamic(() => import('./AppointmentDialogs').then((module) => module.AppointmentDetailDialog));
+const NewAppointmentDialog = dynamic(() => import('./AppointmentDialogs').then((module) => module.NewAppointmentDialog));
+const WorkshopSettingsSheet = dynamic(() => import('./WorkshopSettingsSheet').then((module) => module.WorkshopSettingsSheet));
 const TIME_FORMAT = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 
-export default function WorkshopCalendar({ initialSettings, canEdit, today: serverToday }: {
-  initialSettings: WorkshopSettings | null; canEdit: boolean; today: string;
+export default function WorkshopCalendar({ canEdit, today: serverToday }: {
+  canEdit: boolean; today: string;
 }) {
   const controller = useCalendarController();
   const { english } = usePreviewLanguage();
@@ -44,7 +45,9 @@ export default function WorkshopCalendar({ initialSettings, canEdit, today: serv
     { value: 'timeGridWeek', label: text.week },
     { value: 'timeGridDay', label: text.day },
   ];
-  const [settings, setSettings] = useState(initialSettings);
+  const [settings, setSettings] = useState<WorkshopSettings | null>(null);
+  const [settingsError, setSettingsError] = useState(false);
+  const [settingsRequest, setSettingsRequest] = useState(0);
   const [selectedCalendar, setSelectedCalendar] = useState('all');
   const [range, setRange] = useState<{ start: string; end: string } | null>(null);
   const [dateInfo, setDateInfo] = useState({ title: '', days: 0, start: 0, end: 0 });
@@ -67,12 +70,13 @@ export default function WorkshopCalendar({ initialSettings, canEdit, today: serv
   }, [loadKey, range]);
 
   useEffect(() => {
-    if (initialSettings) return;
-    fetch('/api/admin/workshop/settings', { cache: 'no-store' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((next: WorkshopSettings | null) => { if (next) setSettings(next); })
-      .catch(() => undefined);
-  }, [initialSettings]);
+    const ctrl = new AbortController();
+    fetch('/api/admin/workshop/settings', { cache: 'no-store', signal: ctrl.signal })
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+      .then((next: WorkshopSettings) => { setSettings(next); setSettingsError(false); })
+      .catch((error) => { if (error.name !== 'AbortError') setSettingsError(true); });
+    return () => ctrl.abort();
+  }, [settingsRequest]);
 
   const calendars = useMemo(() => [
     { value: 'all', label: text.allCalendars },
@@ -209,7 +213,7 @@ export default function WorkshopCalendar({ initialSettings, canEdit, today: serv
             controller={controller}
             initialView={views[0].value}
             initialDate={serverToday}
-            plugins={[...plugins]}
+            plugins={plugins}
             popoverCloseContent={() => <XIcon className="text-muted-foreground group-hover:text-foreground size-5" />}
             events={events}
             nowIndicator
@@ -233,7 +237,9 @@ export default function WorkshopCalendar({ initialSettings, canEdit, today: serv
                 start: info.view.currentStart.getTime(),
                 end: info.view.currentEnd.getTime(),
               });
-              setRange({ start: info.start.toISOString(), end: info.end.toISOString() });
+              const start = info.start.toISOString();
+              const end = info.end.toISOString();
+              setRange((previous) => previous?.start === start && previous.end === end ? previous : { start, end });
             }}
             dateClick={(info) => {
               const at = amsterdamParts(info.date);
@@ -251,19 +257,37 @@ export default function WorkshopCalendar({ initialSettings, canEdit, today: serv
               const appointment = loaded.appointments.find((a) => a.id === info.event.id);
               // A drop in month view keeps the original clock time.
               const time = info.view.type === 'dayGridMonth' && appointment ? amsterdamParts(appointment.starts_at).time : at.time;
-              const response = await fetch('/api/admin/workshop/appointments', {
+              try {
+                const response = await fetch('/api/admin/workshop/appointments', {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: info.event.id, action: 'move', date: at.day, time }),
               });
-              const body = await response.json().catch(() => null);
-              if (!response.ok) { info.revert(); flash(apiError(text, body, response.status)); return; }
-              flash(text.moved);
-              setReload((n) => n + 1);
+                const body = await response.json().catch(() => null);
+                if (!response.ok) { info.revert(); flash(apiError(text, body, response.status)); return; }
+                flash(text.moved);
+                setReload((n) => n + 1);
+              } catch {
+                info.revert();
+                flash(text.errors.service_error);
+              }
             }}
           />
         </div>
       </div>
 
+      {!settings && (draft || settingsOpen || selected) && (
+        <Dialog open onOpenChange={(open) => {
+          if (!open) { setDraft(null); setSettingsOpen(false); setSelectedId(null); }
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{draft ? text.newAppointment : settingsOpen ? text.settings : text.title}</DialogTitle>
+              <DialogDescription role={settingsError ? 'alert' : 'status'}>{settingsError ? text.loadError : text.loading}</DialogDescription>
+            </DialogHeader>
+            {settingsError && <Button variant="outline" onClick={() => { setSettingsError(false); setSettingsRequest((n) => n + 1); }}>{text.retry}</Button>}
+          </DialogContent>
+        </Dialog>
+      )}
       {settings && draft && (
         <NewAppointmentDialog key={`${draft.date}-${draft.time}`} initial={draft} settings={settings}
           defaultCalendar={selectedCalendar === 'all' ? '' : selectedCalendar} text={text} english={english}
